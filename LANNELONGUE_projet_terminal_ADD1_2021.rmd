@@ -1,0 +1,862 @@
+---
+title: "Projet final ADD1 2021 Elisa Lannelongue"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval=TRUE)
+```
+
+```{r, include=FALSE}
+#Load packages
+library(tidyverse)
+library(readxl)
+library(RColorBrewer)
+library(maptools)
+library(DT)
+library(countrycode)
+
+```
+
+# Introduction
+
+In this project, I've decided to look at epidemiological data on AIDS in the adult population and in children and teenagers between 1990-2020. \ 
+
+AIDS (acquired immunodeficiency syndrome) results from an HIV (human immunodeficiency virus) infection. The period of latency between the initial HIV infection and the apparition of the first symptoms of AIDS may vary. As the infection progresses, it increasingly interferes with the immune system, which causes the the apparition of opportunistic infections. \
+
+Although it is thought that HIV initially originated in the 1920's, AIDS was first recognized in 1981 and in 1983 the HIV virus was discovered and identified as the cause of AIDS. Currently available data appears to suggests that the epidemic started in the mid-to late 1970s, and that by 1980, HIV had already become a global epidemic. \
+
+According to the Center for Disease Control, HIV/AIDS is a critical health issue in several parts of the world, and even more so in marginalized countries. In 2018, over 1.7 million new cases of HIV were reported worldwide. In addition, about 37.9 million people were living with HIV in 2018 : 36.2 million of them were adults and 1.8 million were children under the age of 15 years old. Among them, 24.5 million were receiving anti-retroviral therapy (ART).\
+
+Discrimination against HIV/AIDS victims is common worldwide. According to many surveys, infected patients are more likely to be subjected to harassment, and marginalized population are more affected by the epidemic. In the wake of the epidemic, global HIV response therefore sought to include continuous efforts to provide vulnerable population with information and education programs on HIV and AIDS, as well sustaining research on HIV.\
+
+## Presentation of the data
+
+Two datasets available online were used to build our corpus. Both datasets contain data collected by different national level organisms as well as global organizations such as UNAIDS, WHO and UNICEF. Therefore, there might be country-specific differences in the procedures of data collection entailing differences in terms of categorizations for instance. This would require us to thoroughly examine each country and organization data collection methods to these possible differences into account when aggregating indicators. In this project, we are going to assume these differences are negligible. 
+
+- UNAIDS 2021 epidemiological estimates (https://aidsinfo.unaids.org/) : UNAIDS leads extensive data collection on HIV epidemiology. This dataset includes HIV epidemiological estimates and country-reported data on national AIDS response when the information has been made available to the public by the relevant authorities. 
+
+```{r}
+#Load the data from UNICEF (2020) dataset
+HIV_Epidemiology_orig <- read_excel('HIV_estimates_from_1990-to-present.xlsx',
+                           sheet = 'HIV estimates - by Year',
+                           col_names = TRUE,
+                           na = c("", "..."),
+                           skip = 4)
+```
+
+-  The UNICEF 2021 dataset HIV estimates for children (https://data.unicef.org/) : this dataset contains estimates of key indicators on HIV response by country, age and sex over time. It includes population statistics and survey data on HIV reviewed by UNAIDS, UNICEF and WHO for completeness and quality. In this project, I only used parts of the complete dataset for practical reasons. Moreover, regional data for Eastern Europe, Central Asia, Northern America and Western Europe is not available and country specific data was only included when national estimates were published through the Global AIDS monitoring/UNAIDS estimation process. However, this data was used to compute global indicators.
+
+
+```{r, include=TRUE}
+#Load the data form the UNIAIDS (2020) dataset
+HIV_Epidemiology_children_orig <- read_excel('HIV_Epidemiology_Children_Adolescents_2021.xlsx',
+                                     sheet = 'Data',
+                                     col_names = TRUE,
+                                     skip = 1,
+                                     guess_max = 2000)
+```
+
+Both datasets are fragmented, and there are a lot of missing data points for every indicator so I tried to do visualizations using the indicators for cross-country comparisons were possible. 
+
+```{r, eval=TRUE, echo=TRUE}
+head(HIV_Epidemiology_orig)
+```
+
+```{r, eval=TRUE, echo=TRUE}
+head(HIV_Epidemiology_children_orig)
+```
+
+## Getting the data into tidy format
+### The UNAIDS dataset
+
+```{r, include = TRUE, echo=TRUE, eval=TRUE}
+#Get the UNAIDS 2021 data into tidy format
+HIV_Epidemiology <- HIV_Epidemiology_orig %>% 
+  rename(Year = `...1`, 
+         ISO3 = `...2`, 
+         region = `...3`, 
+         nb_death = `AIDS-related deaths among children (0-14)`,
+         nb_infected = `Estimated children (0-14) living with HIV`,
+         incidence_rate = `All ages incidence (per 1000 uninfected population)`,
+         nb_infection = `Children (0-14) newly infected with HIV`) %>%
+  select(ISO3, region, Year, nb_death, nb_infected, incidence_rate, nb_infection) %>%
+  mutate(nb_death = as.numeric(gsub('<', '', nb_death)),
+         nb_infected = as.numeric(gsub('<', '', nb_infected)),
+         incidence_rate = as.numeric(gsub('<', '', incidence_rate)),
+         nb_infection = as.numeric(gsub('<', '', nb_infection)),
+         ISO3 = as.factor(ISO3))
+
+# remove the useless first row
+HIV_Epidemiology <- HIV_Epidemiology[-1,]
+
+head(HIV_Epidemiology)
+```
+
+### The UNICEF dataset
+
+```{r, include=TRUE, eval=TRUE}
+#Get the UNICEF data into tidy format
+HIV_Epidemiology_children <- HIV_Epidemiology_children_orig %>% 
+  pivot_wider(names_from = Indicator,
+              values_from = Value) %>%
+  rename(region = `Country/Region`,
+         UNICEF_region = `UNICEF Region`,
+         data_source = `Data source`,
+         incidence_rate = `Estimated incidence rate (new HIV infection per 1,000 uninfected population)`,
+         transmission_rate = `Estimated mother-to-child transmission rate (%)`,
+         nb_death = `Estimated number of annual AIDS-related deaths`,
+         nb_infection = `Estimated number of annual new HIV infections`,
+         nb_infected = `Estimated number of people living with HIV`,
+         death_rate = `Estimated rate of annual AIDS-related deaths (per 100,000 population)`) %>%
+  select(ISO3, UNICEF_region, region, data_source, Year, Sex, Age,
+         incidence_rate, death_rate, nb_infection, nb_infected, nb_death, Lower, Upper) %>%
+  mutate(Age = gsub('Age ', '', Age),
+         nb_death = gsub(',', '', nb_death),
+         nb_infection = gsub(',', '', nb_infection),
+         nb_infected = gsub(',', '', nb_infected),
+         Age = as.factor(Age),
+         Sex = as.factor(Sex),
+         data_source = as.factor(data_source),
+         region = as.factor(region),
+         UNICEF_region = as.factor(UNICEF_region),
+         incidence_rate = as.numeric(incidence_rate),
+         death_rate = as.numeric(death_rate),
+         nb_infection = as.numeric(nb_infection),
+         nb_infected = as.numeric(nb_infected),
+         nb_death = as.numeric(nb_death),
+         ISO3 = as.factor(ISO3))
+```
+
+
+```{r, include=TRUE, eval=TRUE}
+#Show the main dataset
+head(HIV_Epidemiology_children)
+```
+
+```{r}
+#Get individual tables for each variable of interest
+tb1 <- HIV_Epidemiology_children %>%
+  select(ISO3, UNICEF_region, region, data_source, Year, Sex, Age, incidence_rate) %>%
+  filter(! is.na(incidence_rate)) 
+
+tb2 <- HIV_Epidemiology_children %>% 
+  select(ISO3, UNICEF_region, region, data_source, Year, Sex, Age, death_rate) %>%
+  filter(! is.na(death_rate))
+
+tb3 <- HIV_Epidemiology_children %>%
+  select(ISO3, UNICEF_region, region, data_source, Year, Sex, Age, nb_infection) %>%
+  filter(! is.na(nb_infection))
+
+tb4 <- HIV_Epidemiology_children %>%
+  select(ISO3, UNICEF_region, region, data_source, Year, Sex, Age, nb_infected) %>%
+  filter(! is.na(nb_infected))
+
+tb5 <- HIV_Epidemiology_children %>%
+  select(ISO3, UNICEF_region, region, data_source, Year, Sex, Age, nb_death) %>%
+  filter(! is.na(nb_death))
+
+key = c('ISO3', 'UNICEF_region', 'region', 'data_source', 'Year', 'Sex', 'Age')
+
+#Get compact table
+HIV_Epidemiology_children2 <- inner_join(tb1, tb2, by= key) %>%
+  inner_join(., tb3, by = key) %>%
+  inner_join(., tb4, by = key) %>%
+  inner_join(., tb5, by = key)
+```
+
+
+```{r}
+#Show compact table
+head(HIV_Epidemiology_children2)
+```
+
+## The indicators 
+
+In order to allow for easy comparisons, I focused on the common indicators of both datasets. It might have been interesting to look further into how these indicators were computed based on the raw data, however, since both datasets are linked as mentioned above, it is reasonable to assume that the estimates of the incidence rate are comparable. 
+
+### The incidence rate
+the incidence rate of HIV corresponds to the number of new cases reported within a given time period (in our case, a year) as a proportion of the number of persons at risk for the disease within the general population (per 1000 persons in this case). \
+
+### The numbrer of new cases
+This is the number of reported HIV cases over a given period of time. 
+
+### The number of infected
+This is the number of person infected by the HIV at a given moment within the population. 
+
+# The global evolution of the incidence rate of HIV between 1990-2020 in the general population
+
+In 2015, the Global Burden of Disease Study estimated that the global incidence of HIV infection had peaked in 1997 at 3.3 million per year, which is coherent with the observed peak on the figure bellow. Furthermore, observed that the global incidence of HIV then fell rapidly from 1997 to 2005 to about 2.6 million per year, and kept decreasing more slowly afterward. These observations also match the figure bellow. 
+
+```{r, echo=TRUE, out.width = "100%"}
+#Plot the global estimated incidence rate of HIV between 2000-2019
+HIV_Epidemiology %>% select(region, Year, incidence_rate) %>%
+  filter(region == "Global") %>%
+  ggplot() + 
+  geom_point(aes(x = Year, y = incidence_rate), size = 3) +
+  geom_line(aes(x = Year, y = incidence_rate)) + 
+  scale_x_continuous(breaks = c(1990, 1995, 2000, 2005, 2010, 2015, 2020)) +
+  scale_y_continuous(breaks = c(0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50)) +
+  labs(
+    x = "Year",
+    y = "Incidence rate",
+    title = "Global evolution of the HIV incidence rate between 1990-2020 in the general population \n of the Southern Hemisphere"
+  ) + 
+  theme_bw(base_size=9) + 
+  theme(axis.text.x=element_text(size=10),
+        axis.text.y=element_text(vjust=0.2),
+        axis.ticks=element_line(size=0.4),
+        plot.background=element_blank(),
+        panel.border=element_blank(),
+        plot.margin=margin(0.7,0.4,0.1,0.2,"cm"),
+        plot.title=element_text(hjust=0, size=12))
+  
+```
+
+```{r, echo=TRUE, out.width = "100%"}
+HIV_Epidemiology %>% 
+  filter(is.na(ISO3), region != 'Global') %>%
+  ggplot() + 
+  geom_point(aes(x = Year, y = incidence_rate, color = region)) +
+  geom_line(aes(x = Year, y = incidence_rate, color = region)) +
+  labs(
+    x = "Year",
+    y = "Incidence rate (number of cases per 1000)",
+    title = "Regional evolution of the HIV incidence rate between 1990-2020 in the general population",
+    color = "") +
+  scale_color_manual(labels = rev(c("Western and \n central Europe \n and North America", 
+                                    "Western and \n central Africa",
+                                    "Middle East and \n North Africa",
+                                    "Latin America",
+                                    "Eastern Europe and \n central Asia",
+                                    "Eastern and \n southern Africa",
+                                    "Caribbean",
+                                    "Asia and \n the Pacific")),
+                     values=brewer.pal(8,"Dark2")) +
+  theme_bw(base_size=9) + 
+  theme(axis.text.x=element_text(size=10),
+        axis.text.y=element_text(vjust=0.2),
+        axis.ticks=element_line(size=0.4),
+        plot.background=element_blank(),
+        panel.border=element_blank(),
+        plot.margin=margin(0.7,0.4,0.1,0.2,"cm"),
+        plot.title=element_text(hjust=0, size=12),
+        legend.position = "bottom")
+```
+The region of Sub-Saharan Africa (Eastern and Southern Africa on the figure) is largely the most affected. In 2018, it was estimated that approximately 61% of new HIV infections occurred in this region. \
+
+Prevalence ratios in "Western and central Europe and North America" are low and the incidence of HIV has remained relatively stable. In Asia and the Pacific (0.05 in 2017), the Middle East and North Africa (0.08 in 2017), western and central Africa (0.06 in 2017), the incidence rate has remained low and relatively stable as well. In the Caribbean (0.05 in 2017) and in Latin America (0.06 in 2017), the incidence rate of HIV has decreased from 1995 onward and is now around 0.05 in 2020. These observations need to be qualified since there are countries in each regions that did not make the data on HIV available for every year, and therefore the estimates may not fully reflect the magnitude of the epidemic in each region at every point in time.
+
+# The evolution of the AIDS epidemic among children and teenagers
+
+The UNICEF dataset focuses on children. Between 2000-2020, the number of reported new cases of HIV steadily decreased for children between 10 to 19 years old. This reflects the observed decrease of the HIV incidence rate in the early 2000, which was due to important actions including the acceleration of new medicines and diagnostics, promoting community engagement and services and increasingly good access to information on sexual and reproductive health and HIV testing. Naturally, this trend impacts the evolution of the infected population, which kept increasing since there is always an influx of new cases, and later on stabilized. 
+
+```{r}
+HIV_Epidemiology_children2 %>%
+  filter(Sex == 'Both', Age == '10-19', region == 'Global') %>%
+  ggplot() + 
+  geom_point(aes(x = Year, y = nb_infection, color = 'New cases'), size = 3) +
+  geom_line(aes(x = Year, y = nb_infection, color = 'New cases')) +
+  geom_point(aes(x = Year, y = nb_infected, color = 'Infected'), size = 3) +
+  geom_line(aes(x = Year, y = nb_infected, color = 'Infected')) +
+  scale_y_continuous(breaks = c(100000, 250000, 500000, 750000, 1000000,
+                                1250000, 1500000, 1750000, 2000000),
+                     labels = c('10e^4', '25e^4', '50e^4', '75e^4', '10e^5',
+                                '12.5e^5', '15.0e^5', '17.5e^5', '20.0e^5')) +
+  labs(
+    x = "Year",
+    y = "Number of individuals",
+    colour = 'Status',
+    title = "Global evolution of population of teenagers (10-19 years old) \n infected by the HIV between 2000-2020") + 
+  theme_bw(base_size=9) + 
+  theme(axis.text.x=element_text(size=10),
+        axis.text.y=element_text(vjust=0.2),
+        axis.ticks=element_line(size=0.4),
+        plot.background=element_blank(),
+        panel.border=element_blank(),
+        plot.margin=margin(0.7,0.4,0.1,0.2,"cm"),
+        plot.title=element_text(hjust=0, size=12))
+```
+
+```{r}
+labels_names <- c('0-14' = 'Children between 0 to 14 years old',
+                  '10-19' = 'Teenagers between 10 to 19 years old')
+
+HIV_Epidemiology_children %>%
+  filter(region == 'Global', Age %in% c('0-14', '10-19')) %>%
+  ggplot() + 
+  geom_point(aes(x = Year, y = incidence_rate, color = Sex), size = 2) +
+  facet_wrap(~Age, nrow = 2, labeller = as_labeller(labels_names)) +
+  labs(
+    x = "Year",
+    y = "Incidence rate",
+    colour = 'Sex',
+    title = "Global evolution of the HIV incidence rate between 1990-2020 for children and teenagers \n of the Southern Hemisphere") + 
+  theme_bw(base_size=9) + 
+  theme(axis.text.x=element_text(size=10),
+        axis.text.y=element_text(vjust=0.2),
+        axis.ticks=element_line(size=0.4),
+        plot.background=element_blank(),
+        panel.border=element_blank(),
+        plot.margin=margin(0.7,0.4,0.1,0.2,"cm"),
+        plot.title=element_text(hjust=0, size=12))
+```
+
+
+
+```{r}
+HIV_Epidemiology_children %>% select(region, UNICEF_region, Year,
+                             Sex, Age, incidence_rate) %>%
+  filter(Sex == "Both", Age == '10-19') %>%
+  drop_na() %>%
+  mutate(UNICEF_region = fct_relevel(UNICEF_region,
+                                     "Eastern and Southern Africa",
+                                     "West and Central Africa",
+                                     "Middle East and North Africa",
+                                     "Latin America and Caribbean",
+                                     "East Asia and Pacific",
+                                     "South Asia",
+                                     "Eastern Europe and Central Asia",
+                                     "Western Europe")) %>%
+  ggplot() + 
+  geom_tile(aes(x = Year, y = UNICEF_region, fill = incidence_rate), 
+            colour = "white",
+            size = 0.2) + 
+  labs(x = "",
+       y = "",
+       fill = "Log incidence rate \n (number of cases \n per 1000)",
+       title = "Regional evolution of the HIV incidence rate between \n 2000-2020 in teenagers (10-19 year old) population (UNICEF)") + 
+  scale_y_discrete(labels = c("Eastern and \n Southern Africa",
+                              "West and \n Central Africa",
+                              "Middle East and\n North Africa",
+                              "Latin America \n and Caribbean",
+                              "East Asia and \n Pacific",
+                              "South Asia",
+                              "Eastern Europe \n and Central Asia",
+                              "Western Europe")) +
+  scale_fill_gradientn(breaks = c(0.01, 0.1, 1, 10),
+                       labels = c(0.01, 0.1, 1, 10),
+                       colours = colorRampPalette(c("yellow", "red"))(15), 
+                       trans = 'log2') +
+  theme_bw(base_size=9) + 
+  theme(legend.position="right",
+        legend.direction="vertical",
+        legend.margin=margin(grid::unit(0,"cm")),
+        legend.text=element_text(size=7,face="bold"),
+        legend.key.height=grid::unit(0.8,"cm"),
+        legend.key.width=grid::unit(0.2,"cm"),
+        axis.text.x=element_text(size=10),
+        axis.text.y=element_text(vjust=0.2),
+        axis.ticks=element_line(size=0.4),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border=element_blank(),
+        plot.margin=margin(0.7,0.4,0.1,0.2,"cm"),
+        plot.title=element_text(hjust=0,size=12))
+```
+This figure concerns teenagers. Although HIV/AIDS is a global epidemic, there are trends in the distribution of HIV incidence and regions most affected by the disease. The CDC reports that areas like the Sub-Saharan Africa region is the most affected by HIV and AIDS worldwide, and accounts for approximately 61% of all new HIV infections (REF). Other regions significantly affected by HIV and AIDS include Asia and the Pacific, Latin America and the Caribbean, Eastern Europe, and Central Asia (REF). As shown in the heatmap above, there are very distinct trends in terms of the presence of the disease in the different regions considered. 
+
+```{r, echo=TRUE, out.width = "100%"}
+HIV_Epidemiology_children %>% select(region, UNICEF_region, ISO3, Age, Sex, Year, incidence_rate) %>%
+  filter(UNICEF_region %in% c("Eastern and Southern Africa"), Age == "10-19", Sex == "Both") %>%
+  mutate(region = as.factor(region)) %>%
+  drop_na() %>%
+  ggplot() + 
+  geom_tile(aes(x = Year, y = region, fill = incidence_rate), 
+            colour = "white",
+            size = 0.2) + 
+  labs(x = "Year",
+       y = "",
+       fill = "Log Incidence \n rate",
+       title = "Evolution of the HIV incidence rate in Eastern and Southern Africa \n between 2000-2020 for teenagers (10-19 year old)") +
+  scale_fill_gradientn (breaks = c(0.01, 0.1, 1, 10),
+                       labels = c(0.01, 0.1, 1, 10),
+                       colours = colorRampPalette(c("yellow", "red"))(15),
+                       trans = 'log2') +
+  theme_bw(base_size=9) + 
+  theme(legend.position="right",
+        legend.direction="vertical",
+        legend.margin=margin(grid::unit(0,"cm")),
+        legend.text=element_text(size=7),
+        legend.key.height=grid::unit(0.5,"cm"),
+        legend.key.width=grid::unit(0.2,"cm"),
+        axis.text.x=element_text(size=7),
+        axis.text.y=element_text(vjust=0.1),
+        axis.ticks=element_line(size=0.4),
+        plot.background=element_blank(),
+        panel.border=element_blank(),
+        plot.title=element_text(hjust=0,size=12))
+```
+On a more local scale, there are still spatial inequalities in terms of the presence of the disease, which reflect different forms and degrees of marginalization. South Africa has the largest population of people with HIV of any country in the world, at 7.06 million as of 2017 according to UNAIDS reports.
+
+```{r}
+t <- HIV_Epidemiology_children %>%
+  filter(UNICEF_region %in% c("Eastern and Southern Africa",
+                            "West and Central Africa")) %>% 
+  select(ISO3, region) %>%
+  rename(`Country Name` = region) %>%
+  distinct()
+
+datatable(t)
+```
+# Global and regional example visualization of the spatial data on the AIDS epidemic among the general population
+
+## The global scale
+
+As mentioned above, in 2018, approximately 37.9 million people were infected by the HIV, and there were about 770,000 deaths attributed to AIDS in 2018. 
+
+```{r}
+#Visualization of the spatial data
+reg_data <- HIV_Epidemiology %>%
+  select(ISO3, region, incidence_rate, Year) %>%
+  filter(Year == 2020 & ! is.na(ISO3)) %>%
+  select(incidence_rate, ISO3, region)
+
+world_map <- map_data("world") %>% 
+  filter(region != "Antarctica") %>%
+  mutate(ISO3 = countrycode(region,
+                            'country.name',
+                            'iso3c')) %>% 
+  select(ISO3, region, long, lat, group)
+
+
+table <- full_join(reg_data, world_map, by = 'ISO3')
+
+
+table %>% ggplot(aes(long, lat, group = group)) +
+  geom_polygon(aes(fill = incidence_rate), color = "white") +
+  scale_fill_gradientn(breaks = c(0.01, 0.1, 1, 5),
+                       labels = c(0.01, 0.1, 1, 5),
+                       colours = colorRampPalette(c("yellow", "red"))(15), 
+                       trans = 'log2') +
+  labs(x = "Longitude",
+       y = "Latitude",
+       fill = "Log incidence \n rate",
+       title = "Incidence rate of HIV in 2020 in the general population (adults over the age of 15)") + 
+  theme_bw(base_size=9) + 
+  theme(legend.position="right",
+        legend.direction="vertical",
+        legend.margin=margin(grid::unit(0,"cm")),
+        legend.text=element_text(size=7),
+        legend.key.height=grid::unit(0.5,"cm"),
+        legend.key.width=grid::unit(0.2,"cm"),
+        axis.text.x=element_text(size=7),
+        axis.text.y=element_text(vjust=0.1),
+        axis.ticks=element_line(size=0.4),
+        plot.background=element_blank(),
+        panel.border=element_blank(),
+        plot.title=element_text(hjust=0,size=12))
+```
+
+```{r}
+#Animated vizualization of the spatial data
+# library(gganimate)
+# library(spData)
+
+# reg_data <- HIV_Epidemiology %>%
+#   select(ISO3, region, incidence_rate, Year) %>%
+#   filter(! is.na(ISO3))
+
+# world_map <- map_data("world") %>% 
+#   filter(region != "Antarctica") %>%
+#   mutate(ISO3 = countrycode(region,
+#                             'country.name',
+#                             'iso3c')) %>% 
+#   select(ISO3, region, long, lat, group)
+
+# table2 <- full_join(reg_data, world_map, by = 'ISO3') %>%
+#   mutate(Year = as.integer(Year))
+
+# map <- table2 %>% ggplot(aes(long, lat, group = group)) +
+#   geom_polygon(aes(fill = incidence_rate), color = "white") +
+#   scale_fill_gradientn(breaks = c(0.01, 0.1, 1, 5),
+#                        labels = c(0.01, 0.1, 1, 5),
+#                        colours = colorRampPalette(c("yellow", "red"))(15), 
+#                        trans = 'log2') +
+#   labs(x = "Longitude",
+#        y = "Latitude",
+#        fill = "Log incidence \n rate",
+#        title = "Incidence rate of HIV between 1990 and 2020 in the general population \n (adults over the age of 15)") +
+#   transition_states(Year) +
+#   theme_bw(base_size=9) + 
+#   theme(legend.position="right",
+#         legend.direction="vertical",
+#         legend.margin=margin(grid::unit(0,"cm")),
+#         legend.text=element_text(size=7),
+#         legend.key.height=grid::unit(0.5,"cm"),
+#         legend.key.width=grid::unit(0.2,"cm"),
+#         axis.text.x=element_text(size=7),
+#         axis.text.y=element_text(vjust=0.1),
+#        axis.ticks=element_line(size=0.4),
+#        plot.background=element_blank(),
+#        panel.border=element_blank(),
+#        plot.title=element_text(hjust=0,size=12)) +
+#  enter_fade() +
+#  exit_fade() +
+#  ease_aes('sine-in-out')
+
+#anim = animate(map, nframes = 100, fps = 5, end_pause = 20, renderer=gifski_renderer("map.gif"))
+```
+
+## A regional case : the United States of America
+Another regional case that is interesting to study is the case of the presence of HIV in western countries such as the United States, which also reflects deep-rooted inequalities in terms of access to information and healthcare. In 2017, approximately 1 million people in the United States had HIV. Among them, 14% did not realize that they were infected. 
+
+```{r}
+# Get USA data
+# rate = nb of HIV diagnoses per 100,000 people in 2018. Modify rate indicator to have nb of cases per 1000 people as above
+HIV_Epidemiology_America <- read_csv("Incidence_rates_USA_2018.csv") %>%
+  rename(Code = STATE) %>%
+  mutate(Rate = Rate/100)
+```
+
+```{r}
+head(HIV_Epidemiology_America)
+```
+
+```{r}
+# Get spatial data about American states. 
+states <- map_data("state")
+
+# Get the corresponding codes
+codes <- read.csv('states.csv') %>%
+  rename(region = ï..State) %>%
+  mutate(region = tolower(region))
+
+# Create full table with the combination of the epidemiological data and the spatial data
+table <- full_join(HIV_Epidemiology_America, codes, by = 'Code') %>%
+  select(region, Rate, Code) %>%
+  drop_na() %>%
+  left_join(., states, by = 'region') %>%
+  mutate(subregion = NULL)
+```
+
+
+```{r}
+head(table)
+```
+
+```{r}
+#Visualization of the spatial data
+table %>% ggplot(aes(long, lat, group = group)) +
+  geom_polygon(aes(fill = Rate), color = "white") +
+  scale_fill_gradientn (colours = colorRampPalette(c("yellow", "red"))(15)) +
+  labs(x = "Longitude",
+       y = "Latitude",
+       fill = "Incidence \n rate",
+       title = "Incidence rate of HIV in 2018 in the general population (adults over the age of 15)") + 
+  theme_bw(base_size=9) + 
+  theme(legend.position="right",
+        legend.direction="vertical",
+        legend.margin=margin(grid::unit(0,"cm")),
+        legend.text=element_text(size=7),
+        legend.key.height=grid::unit(0.5,"cm"),
+        legend.key.width=grid::unit(0.2,"cm"),
+        axis.text.x=element_text(size=7),
+        axis.text.y=element_text(vjust=0.1),
+        axis.ticks=element_line(size=0.4),
+        plot.background=element_blank(),
+        panel.border=element_blank(),
+        plot.title=element_text(hjust=0,size=12))
+  
+```
+## Access to ART treatment and prevention in the Southen Hemisphere
+```{r}
+#Load the data
+ART_coverage_orig <- read_excel('HIV_Adolescent_ART_COverage_2021.xlsx',
+                                     sheet = 'Data',
+                                     col_names = TRUE,
+                                     skip = 1,
+                                     guess_max = 2000)
+
+PMTCT_coverage_orig <- read_excel('HIV_PMTCT_COverage_2021.xlsx',
+                                     sheet = 'Data',
+                                     col_names = TRUE,
+                                     skip = 1,
+                                     guess_max = 2000)
+
+#Get the UNAIDS 2021 data into tidy format
+ART_Coverage <- ART_coverage_orig %>%
+  pivot_wider(names_from = Indicator,
+              values_from = Value) %>%
+  rename(Data_source = `Data source`,
+         Region = `Country/Region`,
+         UNCEF_region = `UNICEF Region`,
+         ART_cov_percent = `Per cent of adolescents living with HIV receiving ART`,
+         nb_ART_coverage = `Reported number of adolescents receiving ART`) %>%
+  mutate(ISO3 = as.factor(ISO3),
+         Year = as.factor(Year),
+         Sex = as.factor(Sex),
+         Age = as.factor(Age),
+         Lower = as.numeric(Lower),
+         Upper = as.numeric(Upper),
+         ART_cov_percent = as.numeric(ART_cov_percent),
+         nb_ART_coverage = as.numeric(nb_ART_coverage))
+
+PMTCT_Coverage <- PMTCT_coverage_orig %>%
+  pivot_wider(names_from = Indicator,
+              values_from = Value) %>%
+  rename(Data_source = `Data source`,
+         Region = `Country/Region`,
+         UNCEF_region = `UNICEF Region`,
+         lifelong_ART_percent = `Per cent of pregnant women living with HIV receiving lifelong ART`,
+         nb_lifelong_ART = `Reported number of pregnant women living with HIV receiving lifelong ART`,
+         lifelong_ARV_percent = `Per cent of pregnant women living with HIV receiving effective ARVs for PMTCT (excludes single-dose nevirapine)`,
+         nb_lifelong_ARV = `Reported number of pregnant women living with HIV receiving effective ARVs for PMTCT (excludes single-dose nevirapine)`) %>%
+  mutate(lifelong_ART_percent = as.numeric(lifelong_ART_percent),
+         nb_lifelong_ART = as.numeric(nb_lifelong_ART),
+         lifelong_ARV_percent = as.numeric(lifelong_ARV_percent),
+         nb_lifelong_ARV = as.numeric(nb_lifelong_ARV),
+         Year = as.factor(Year))
+
+```
+```{r}
+head(ART_Coverage)
+```
+```{r}
+head(PMTCT_Coverage)
+```
+
+```{r}
+library(gridExtra)
+
+p1 <- ART_Coverage %>% filter(ISO3 == '03M49WLD', Sex == 'Both', Age == 'Age 10-19') %>%
+  ggplot(aes(x = Year)) +
+  geom_col(aes(y = ART_cov_percent),
+           fill = "red",
+           alpha=.4) +
+  geom_errorbar(aes(ymin=Lower, ymax=Upper),
+                width=0.3, 
+                colour="red",
+                alpha=0.9,
+                size=1.1) +
+  labs(x = 'Year',
+       y = 'Per cent of adolescents \n living with HIV receiving ART') +
+  theme_bw(base_size=9) + 
+  theme(legend.position="right",
+        legend.direction="vertical",
+        legend.margin=margin(grid::unit(0,"cm")),
+        legend.text=element_text(size=7),
+        legend.key.height=grid::unit(0.5,"cm"),
+        legend.key.width=grid::unit(0.2,"cm"),
+        axis.text.x=element_text(size=7),
+        axis.text.y=element_text(vjust=0.1),
+        axis.ticks=element_line(size=0.4),
+        plot.background=element_blank(),
+        panel.border=element_blank())
+
+p2 <- ART_Coverage %>% 
+  filter(Sex == 'Both', Age == c('Age 15-19'), ISO3 == '03M49WLD') %>%
+  select(Year, Sex, Age, nb_ART_coverage) %>%
+  ggplot(aes(x = Year, y = nb_ART_coverage, group = Age)) +
+  geom_line() +
+  geom_point() +
+  labs(x = 'Year',
+       y = 'Number of adolescents \n receiving ART') +
+  theme_bw(base_size=9) + 
+  theme(legend.position="right",
+        legend.direction="vertical",
+        legend.margin=margin(grid::unit(0,"cm")),
+        legend.text=element_text(size=7),
+        legend.key.height=grid::unit(0.5,"cm"),
+        legend.key.width=grid::unit(0.2,"cm"),
+        axis.text.x=element_text(size=7),
+        axis.text.y=element_text(vjust=0.1),
+        axis.ticks=element_line(size=0.4),
+        plot.background=element_blank(),
+        panel.border=element_blank())
+
+grid.arrange(p1, p2, nrow = 2)
+```
+In this plot we can see that there number and proportion of adolescents and young adults infected with HIV who have access to ART is increasing, which is coherent with the UNICEF and UNAIDS reports for the same period and coincides with the development of healthcare policies alongside local authorities. 
+
+```{r}
+Table_1 <- HIV_Epidemiology_children %>% 
+  filter(Age == '0-14', Sex == 'Both', ISO3 == '03M49WLD', Year >= 2010) %>%
+  select(ISO3, Year, nb_infection, Lower, Upper) %>%
+  drop_na() %>%
+  mutate(Year = as.factor(Year))
+
+Table_2 <- PMTCT_Coverage %>%
+  filter(ISO3 == '03M49WLD') %>%
+  select(ISO3, Year, lifelong_ART_percent, Lower, Upper) %>%
+  drop_na() %>%
+  mutate(Year = as.factor(Year))
+
+Table_3 <- PMTCT_Coverage %>%
+  filter(ISO3 == '03M49WLD') %>%
+  select(ISO3, Year, lifelong_ARV_percent, Lower, Upper) %>%
+  drop_na() %>%
+  mutate(Year = as.factor(Year))
+
+coverage_prevention <- full_join(Table_1, Table_2, by = c('Year', 'ISO3')) %>%
+  full_join(., Table_3, by = c('Year', 'ISO3')) %>%
+  rename(Lower_nb_inf = Lower.x,
+         Upper_nb_inf = Upper.x,
+         Lower_ART_cov = Lower.y,
+         Upper_ART_cov = Upper.y,
+         Lower_ARV_cov = Lower,
+         Upper_ARV_cov = Upper) %>%
+  mutate(Year = as.factor(Year),
+         nb_infection = as.numeric(nb_infection),
+         Lower_nb_inf = as.numeric(gsub(pattern = ',', replacement = '', Lower_nb_inf)),
+         Upper_nb_inf = as.numeric(gsub(pattern = ',', replacement = '', Upper_nb_inf)),
+         lifelong_ART_percent = as.numeric(lifelong_ART_percent),
+         Lower_ART_cov = as.numeric(Lower_ART_cov),
+         Upper_ART_cov = as.numeric(gsub(pattern = '>', replacement = '', Upper_ART_cov)),
+         Lower_ARV_cov = as.numeric(Lower_ARV_cov),
+         Upper_ARV_cov = as.numeric(gsub(pattern = '>', replacement = '', Upper_ARV_cov)))
+
+p1 <- coverage_prevention %>% ggplot(aes(x = Year)) +
+  geom_col(aes(y = lifelong_ART_percent),
+           fill = "orange",
+           alpha=.4) +
+  geom_errorbar(aes(ymin=Lower_ART_cov, ymax=Upper_ART_cov),
+                width=0.3, 
+                colour="orange",
+                alpha=0.9,
+                size=1.1) +
+  labs(x = 'Year',
+       y = '% of ART coverage to prevent \n mother to child transmission') +
+  theme_bw(base_size=9) + 
+  theme(legend.position="right",
+        legend.direction="vertical",
+        legend.margin=margin(grid::unit(0,"cm")),
+        legend.text=element_text(size=7),
+        legend.key.height=grid::unit(0.5,"cm"),
+        legend.key.width=grid::unit(0.2,"cm"),
+        axis.text.x=element_text(size=7),
+        axis.text.y=element_text(vjust=0.1),
+        axis.ticks=element_line(size=0.4),
+        plot.background=element_blank(),
+        panel.border=element_blank())
+
+p2 <- coverage_prevention %>% ggplot(aes(x = Year)) +
+  geom_col(aes(y = lifelong_ARV_percent),
+           fill = "red",
+           alpha=.4) +
+  geom_errorbar(aes(ymin=Lower_ARV_cov, ymax=Upper_ARV_cov),
+                width=0.3, 
+                colour="red",
+                alpha=0.9,
+                size=1.1) +
+  labs(x = 'Year',
+       y = '% of ARV coverage to prevent \n mother to child transmission') +
+  theme_bw(base_size=9) + 
+  theme(legend.position="right",
+        legend.direction="vertical",
+        legend.margin=margin(grid::unit(0,"cm")),
+        legend.text=element_text(size=7),
+        legend.key.height=grid::unit(0.5,"cm"),
+        legend.key.width=grid::unit(0.2,"cm"),
+        axis.text.x=element_text(size=7),
+        axis.text.y=element_text(vjust=0.1),
+        axis.ticks=element_line(size=0.4),
+        plot.background=element_blank(),
+        panel.border=element_blank())
+
+grid.arrange(p1, p2, nrow = 2)
+```
+```{r}
+p1 <- coverage_prevention %>% ggplot(aes(x = Year, y = nb_infection, group = 1)) +
+  geom_line(color = 'red') + 
+  geom_point(color = 'red') +
+  geom_ribbon(aes(ymin = Lower_nb_inf, ymax = Upper_nb_inf),
+              alpha = 0.1,
+              color = 'red',
+              fill = 'red') +
+  labs(x = 'Year',
+       y = 'Number of new HIV infections',
+       title = 'Estimation of the yearly number of new HIV infections on a global scale') +
+  theme_bw(base_size=9) + 
+  theme(legend.position="right",
+        legend.direction="vertical",
+        legend.margin=margin(grid::unit(0,"cm")),
+        legend.text=element_text(size=7),
+        legend.key.height=grid::unit(0.5,"cm"),
+        legend.key.width=grid::unit(0.2,"cm"),
+        axis.text.x=element_text(size=7),
+        axis.text.y=element_text(vjust=0.1),
+        axis.ticks=element_line(size=0.4),
+        plot.background=element_blank(),
+        panel.border=element_blank())
+
+p1
+```
+
+```{r}
+HIV_prevention_orig <- read_excel('HIV_Prevention_Adolescents_2021.xlsx',
+                                     sheet = 'Data',
+                                     col_names = TRUE,
+                                     skip = 1,
+                                     guess_max = 2000)
+```
+
+
+```{r}
+head(HIV_prevention_orig)
+```
+
+```{r}
+#Get the UNAIDS 2021 data into tidy format
+HIV_prevention <- HIV_prevention_orig %>%
+  select(-Age) %>%
+  mutate(row = row_number()) %>%
+  pivot_wider(names_from = Indicator,
+              values_from = Value) %>%
+  rename(info = `Per cent with comprehensive, correct knowledge of HIV`,
+         UNICEF_region = `UNICEF Region`,
+         Data_source = `Data Source`) %>%
+  select(ISO3, Country, UNICEF_region, Data_source,
+         Year, Sex, DISAGG_CATEGORY, DISAGG, info, row) %>%
+  filter(! is.na(info)) %>%
+  pivot_wider(names_from = DISAGG_CATEGORY, 
+              values_from = DISAGG) %>%
+  select(-row)
+```
+
+
+```{r}
+head(HIV_prevention)
+```
+
+```{r}
+p2 <- HIV_prevention %>% filter(UNICEF_region == c("Eastern and Southern Africa",
+                                                  "West and Central Africa",
+                                                  "Middle East and North Africa",
+                                                  "Latin America and Caribbean",
+                                                  "East Asia and Pacific"),
+                                Year == 2019) %>%
+  ggplot(aes(fill=Sex, y=info/100, x=UNICEF_region)) + 
+  geom_bar(position="stack", stat="identity", alpha = 0.4) +
+  labs(x = 'Region',
+       y = '% of the population',
+       title = 'Proportion of the population with comprehensive, correct knowledge of HIV \n in the Southen hemisphere in 2019') +
+  theme_bw(base_size=9) + 
+  theme(legend.position="right",
+        legend.direction="vertical",
+        legend.margin=margin(grid::unit(0,"cm")),
+        legend.text=element_text(size=7),
+        legend.key.height=grid::unit(0.5,"cm"),
+        legend.key.width=grid::unit(0.2,"cm"),
+        axis.text.x=element_text(size=7),
+        axis.text.y=element_text(vjust=0.1),
+        axis.ticks=element_line(size=0.4),
+        plot.background=element_blank(),
+        panel.border=element_blank())
+
+p2
+```
+```{r}
+grid.arrange(p1, p2, nrow = 2)
+```
+Hand in hand with developing healthcare policies meant to improve access to lifesaving medications, another aspect of controlling HIV rate of infection is to develop policies of prevention and improve knowledge about HIV in general. As we can see above, the percentage of the population with accurate knowledge of HIV in the most vulnerable areas is still low. 
+
+# Sources
+Both data sets that I used were taken from the official websites of the UNICEF and UNAIDS. I relied on the 2017 data book available on the UNAIDS website to check for possible mistakes in my plots. The figures I briefly mention in the text were all extracted from the same report.
+
+https://www.unaids.org/sites/default/files/media_asset/20170720_Data_book_2017_en.pdf
+https://www.unaids.org/en/resources/documents/2017/2017_data_book
